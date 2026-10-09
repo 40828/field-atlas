@@ -1,8 +1,11 @@
 /**
- * Tiny external store for the free-tier counter, Pro flag and the
- * "payment successful" banner. It is backed by localStorage (with an
- * in-memory fallback for private modes where storage throws) and is consumed
- * through useSyncExternalStore so it stays hydration-safe and syncs across tabs.
+ * Client-side mirror of the server's usage state.
+ *
+ * The signed cookie behind /api/atlas is the source of truth; this store only
+ * keeps the UI instant (and in sync across tabs) via localStorage. On every page
+ * load the provider overwrites it with the server's answer, so editing
+ * localStorage can change what the UI shows for a moment but never what the
+ * server allows.
  */
 import {
   COUNT_STORAGE_KEY,
@@ -10,11 +13,13 @@ import {
   PRO_STORAGE_KEY,
 } from "@/lib/constants";
 
+export type BannerKind = "success" | "error";
+
 const listeners = new Set<() => void>();
 
 let memCount = 0;
 let memPro = false;
-let bannerVisible = false;
+let banner: BannerKind | null = null;
 
 function emit() {
   listeners.forEach((l) => l());
@@ -56,8 +61,8 @@ export function getPro(): boolean {
   return memPro || stored === "1";
 }
 
-export function getBannerVisible(): boolean {
-  return bannerVisible;
+export function getBanner(): BannerKind | null {
+  return banner;
 }
 
 function writeCount(n: number) {
@@ -65,31 +70,53 @@ function writeCount(n: number) {
   try {
     localStorage.setItem(COUNT_STORAGE_KEY, String(memCount));
   } catch {
-    /* storage unavailable: memCount still enforces the limit this session */
+    /* storage unavailable: memCount still tracks usage this session */
   }
 }
 
-/** Counts one generated map against the free tier (no-op for Pro users). */
+function writePro(pro: boolean) {
+  memPro = pro;
+  try {
+    if (pro) localStorage.setItem(PRO_STORAGE_KEY, "1");
+    else localStorage.removeItem(PRO_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Counts one generated map in the UI (the server counts independently). */
 export function recordMap(): void {
   if (getPro()) return;
   writeCount(getCount() + 1);
   emit();
 }
 
-/** Unlocks Pro and clears the usage counter immediately. */
+/** Replace local state with what the server says. */
+export function applyServerState(state: { pro: boolean; count: number }): void {
+  writePro(state.pro);
+  writeCount(state.pro ? 0 : state.count);
+  emit();
+}
+
+/** The server refused a map (HTTP 402): the free quota is used up. */
+export function markLimitReached(): void {
+  applyServerState({ pro: false, count: FREE_MAP_LIMIT });
+}
+
+/** Server verified a payment: unlock Pro, clear the counter, raise the green banner. */
 export function unlockPro(): void {
-  memPro = true;
-  try {
-    localStorage.setItem(PRO_STORAGE_KEY, "1");
-  } catch {
-    /* ignore */
-  }
+  writePro(true);
   writeCount(0);
-  bannerVisible = true;
+  banner = "success";
+  emit();
+}
+
+export function showPaymentError(): void {
+  banner = "error";
   emit();
 }
 
 export function dismissBanner(): void {
-  bannerVisible = false;
+  banner = null;
   emit();
 }

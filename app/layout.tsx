@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import { AtlasProvider } from "@/components/providers/atlas-provider";
 import { PaywallModal } from "@/components/paywall/paywall-modal";
-import { SuccessBanner } from "@/components/paywall/success-banner";
+import { PaymentBanner } from "@/components/paywall/payment-banner";
 import { InertRoot } from "@/components/providers/inert-root";
 import "./globals.css";
 
@@ -46,10 +46,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full bg-canvas font-sans text-ink antialiased">
         {/*
           AtlasProvider is the global mounting check: on first client mount it
-          looks for ?pay_success=true, unlocks Pro and clears the usage counter.
+          looks for ?pay_success=true&session_id=..., has the server verify the
+          payment with Stripe, then unlocks Pro and clears the usage counter.
         */}
         <AtlasProvider>
-          <SuccessBanner />
+          <PaymentBanner />
           <InertRoot>{children}</InertRoot>
           <PaywallModal />
         </AtlasProvider>

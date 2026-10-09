@@ -11,7 +11,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { FREE_MAP_LIMIT, PAYMENT_PARAM } from "@/lib/constants";
+import { FREE_MAP_LIMIT, PAYMENT_PARAM, SESSION_PARAM } from "@/lib/constants";
+import { fetchEntitlement, verifyPayment } from "@/lib/payments-client";
 import * as usage from "@/lib/usage-store";
 
 interface AtlasContextValue {
@@ -46,16 +47,42 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   const [armed, setArmed] = useState(false);
   const mappedThisSession = useRef(false);
 
-  /* ---- Unlock listener: runs once on mount, before any user action ---- */
+  /*
+    ---- Global mount check (runs once, before any user action) ----
+    1. If Stripe just redirected back (?pay_success=true&session_id=...), ask the
+       server to confirm the payment with Stripe. Only a confirmed payment unlocks
+       Pro, clears the counter and shows the green banner.
+    2. Otherwise (or afterwards) pull the server's view of this browser so a
+       tampered localStorage can't keep the UI "unlocked".
+  */
+  const started = useRef(false);
   useEffect(() => {
+    if (started.current) return; // React StrictMode runs effects twice in dev
+    started.current = true;
+
     const url = new URL(window.location.href);
-    if (url.searchParams.get(PAYMENT_PARAM) !== "true") return;
+    const flagged = url.searchParams.get(PAYMENT_PARAM) === "true";
+    const sessionId = url.searchParams.get(SESSION_PARAM);
 
-    usage.unlockPro(); // sets Pro, resets the counter, raises the success banner
+    if (flagged || sessionId) {
+      // Strip the keywords so a refresh/shared link doesn't re-trigger anything.
+      url.searchParams.delete(PAYMENT_PARAM);
+      url.searchParams.delete(SESSION_PARAM);
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
 
-    // Strip the keyword so a refresh/share link doesn't re-trigger the unlock.
-    url.searchParams.delete(PAYMENT_PARAM);
-    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    void (async () => {
+      if (flagged || sessionId) {
+        const ok = sessionId ? await verifyPayment(sessionId) : false;
+        if (ok) {
+          usage.unlockPro();
+          return;
+        }
+        usage.showPaymentError();
+      }
+      const server = await fetchEntitlement();
+      if (server) usage.applyServerState(server);
+    })();
   }, []);
 
   /* ---- Arm the paywall once the limit is hit ---- */

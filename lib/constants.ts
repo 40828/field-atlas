@@ -16,6 +16,9 @@ export const PRO_STORAGE_KEY = "fieldAtlasPro";
 /** Query parameter Stripe redirects back with after a successful payment. */
 export const PAYMENT_PARAM = "pay_success";
 
+/** Stripe fills this in when the Payment Link success URL contains {CHECKOUT_SESSION_ID}. */
+export const SESSION_PARAM = "session_id";
+
 export const EXAMPLE_FIELDS = [
   "Physics",
   "Feynman path integrals",

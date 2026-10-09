@@ -13,6 +13,7 @@ import type {
   TermOverview,
   Tier,
 } from "./types";
+import { markLimitReached } from "@/lib/usage-store";
 
 const cache = new Map<string, Promise<unknown>>();
 
@@ -26,6 +27,11 @@ async function post<T>(req: AtlasRequest): Promise<T> {
     });
   } catch {
     throw new Error("Network error. Check your connection and retry.");
+  }
+  if (res.status === 402) {
+    // Server says the free quota is gone: lock the UI (paywall) and stop here.
+    markLimitReached();
+    throw new Error("You've used all your free maps. Upgrade to continue.");
   }
   if (!res.ok) throw new Error("Something went wrong. Please retry.");
   return (await res.json()) as T;
