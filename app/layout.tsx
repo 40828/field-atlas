@@ -1,9 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Newsreader } from "next/font/google";
-import { AtlasProvider } from "@/components/providers/atlas-provider";
-import { PaywallModal } from "@/components/paywall/paywall-modal";
-import { PaymentBanner } from "@/components/paywall/payment-banner";
-import { InertRoot } from "@/components/providers/inert-root";
+import { Geist, Geist_Mono } from "next/font/google";
+import { ThemeProvider } from "@/components/providers/theme-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,44 +13,48 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const newsreader = Newsreader({
-  variable: "--font-newsreader",
-  subsets: ["latin"],
-  style: ["normal", "italic"],
-});
-
 export const metadata: Metadata = {
   title: {
-    default: "Field Atlas — map any field of knowledge",
-    template: "%s · Field Atlas",
+    default: "Voltline — Blueprint-to-Proposal Engine",
+    template: "%s · Voltline",
   },
   description:
-    "Name any field and get its complete map: every area and subtopic, core equations, open problems, how the parts connect, the best learning order and a full vocabulary.",
+    "Turn commercial roof blueprints into engineered proposals and a priced bill of materials in minutes. Built for solar and roofing contractors.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070a12",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d0f14" },
+  ],
   viewportFit: "cover",
 };
 
+/**
+ * Root layout: fonts, global CSS and the light/dark ThemeProvider.
+ *
+ * Route-specific chrome lives in nested layouts:
+ *  - /dashboard/**  → app/dashboard/layout.tsx (collapsible sidebar shell)
+ *  - /              → app/(atlas)/layout.tsx   (existing Field Atlas app)
+ */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // `suppressHydrationWarning`: next-themes sets the `dark`/`light` class on
+    // <html> before hydration to avoid a flash of the wrong theme.
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} h-full`}
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} h-full`}
     >
-      <body className="min-h-full bg-canvas font-sans text-ink antialiased">
-        {/*
-          AtlasProvider is the global mounting check: on first client mount it
-          looks for ?pay_success=true&session_id=..., has the server verify the
-          payment with Stripe, then unlocks Pro and clears the usage counter.
-        */}
-        <AtlasProvider>
-          <PaymentBanner />
-          <InertRoot>{children}</InertRoot>
-          <PaywallModal />
-        </AtlasProvider>
+      <body className="min-h-full font-sans antialiased">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

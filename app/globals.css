@@ -1,24 +1,134 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * ──────────────────────────────────────────────────────────────────────────
+ *  Design system — "Voltline" solar & roofing proposal engine
+ *  Dark-mode dominant (deep slate + zinc borders) with an electric-amber
+ *  brand accent. Light mode is a full inversion of the same token set.
+ *  Theme is switched by toggling `.dark` on <html> (see ThemeProvider).
+ * ──────────────────────────────────────────────────────────────────────────
+ */
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  --canvas: #070a12;
-  --surface: #0d1220;
-  --surface-2: #131a2c;
-  --tint: #19223b;
-  --line: #1d2640;
-  --line-strong: #2b3657;
-  --scene-line: #3a4770;
-  --ink: #e9edf9;
-  --mute: #8e99ba;
-  --accent: #7c93ff;
-  --aqua: #4fd1d3;
-  --ok: #34c27a;
-  --warn: #f0a23b;
-  --danger: #ef5b52;
-  color-scheme: dark;
+  --radius: 0.625rem;
+
+  /* Light */
+  --background: oklch(0.984 0.003 255);
+  --foreground: oklch(0.2 0.02 262);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.02 262);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.02 262);
+  --primary: oklch(0.79 0.165 74);
+  --primary-foreground: oklch(0.2 0.04 60);
+  --secondary: oklch(0.96 0.005 255);
+  --secondary-foreground: oklch(0.25 0.02 262);
+  --muted: oklch(0.96 0.005 255);
+  --muted-foreground: oklch(0.5 0.022 262);
+  --accent: oklch(0.955 0.012 85);
+  --accent-foreground: oklch(0.25 0.03 60);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.915 0.006 258);
+  --input: oklch(0.9 0.008 258);
+  --ring: oklch(0.72 0.16 70);
+
+  /* Semantic status colors */
+  --brand: oklch(0.55 0.14 55); /* amber legible as *text* on light surfaces */
+  --success: oklch(0.55 0.14 158);
+  --info: oklch(0.55 0.14 245);
+  --warning: oklch(0.62 0.15 62);
+
+  --sidebar: oklch(0.975 0.004 255);
+  --sidebar-foreground: oklch(0.3 0.02 262);
+  --sidebar-border: oklch(0.91 0.006 258);
+  --sidebar-accent: oklch(0.945 0.02 85);
+  --sidebar-accent-foreground: oklch(0.3 0.06 60);
+
+  --grid-line: oklch(0.2 0.02 262 / 5%);
+}
+
+.dark {
+  --background: oklch(0.145 0.014 262);
+  --foreground: oklch(0.962 0.004 258);
+  --card: oklch(0.182 0.015 262);
+  --card-foreground: oklch(0.962 0.004 258);
+  --popover: oklch(0.2 0.016 262);
+  --popover-foreground: oklch(0.962 0.004 258);
+  --primary: oklch(0.82 0.165 80);
+  --primary-foreground: oklch(0.2 0.035 65);
+  --secondary: oklch(0.24 0.015 262);
+  --secondary-foreground: oklch(0.94 0.004 258);
+  --muted: oklch(0.225 0.014 262);
+  --muted-foreground: oklch(0.7 0.02 260);
+  --accent: oklch(0.27 0.02 262);
+  --accent-foreground: oklch(0.96 0.004 258);
+  --destructive: oklch(0.68 0.2 25);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.82 0.165 80 / 55%);
+
+  --brand: oklch(0.82 0.165 80);
+  --success: oklch(0.75 0.15 160);
+  --info: oklch(0.74 0.12 238);
+  --warning: oklch(0.8 0.16 75);
+
+  --sidebar: oklch(0.12 0.013 262);
+  --sidebar-foreground: oklch(0.85 0.01 260);
+  --sidebar-border: oklch(1 0 0 / 7%);
+  --sidebar-accent: oklch(0.22 0.025 75);
+  --sidebar-accent-foreground: oklch(0.9 0.1 85);
+
+  --grid-line: oklch(1 0 0 / 4%);
 }
 
 @theme inline {
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-serif: var(--font-newsreader), Georgia, serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+
+  /*
+   * Field Atlas token → utility mapping (bg-canvas, text-ink, border-line…).
+   * The *values* are defined on `.atlas-theme` in app/(atlas)/atlas.css, so
+   * they only resolve inside the Atlas route group. `--accent` is shared with
+   * the shadcn token above and simply takes a different value inside Atlas.
+   */
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
@@ -27,253 +137,202 @@
   --color-line-strong: var(--line-strong);
   --color-ink: var(--ink);
   --color-mute: var(--mute);
-  --color-accent: var(--accent);
   --color-aqua: var(--aqua);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --font-serif: var(--font-newsreader), Georgia, serif;
 }
 
-html {
-  background: var(--canvas);
-  color: var(--ink);
-  scroll-behavior: smooth;
-  scroll-padding-top: 120px;
+@layer base {
+  * {
+    border-color: var(--border);
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+  }
+
+  html {
+    background-color: var(--background);
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 40%, transparent);
+  }
 }
 
-body {
-  background: var(--canvas);
-  color: var(--ink);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-}
+/* ───────────────────────── Solar-app visual utilities ───────────────────── */
 
-::selection {
-  background: rgba(124, 147, 255, 0.4);
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
-}
-
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: not-allowed;
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* ---------- Ambient backdrop ---------- */
-.aurora {
+/** Engineering-paper grid, fades out towards the bottom. */
+.bg-blueprint {
   background-image:
-    radial-gradient(ellipse 60% 50% at 80% -10%, rgba(124, 147, 255, 0.16), transparent 60%),
-    radial-gradient(ellipse 45% 40% at 5% 90%, rgba(79, 209, 211, 0.1), transparent 60%);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to bottom, #000 20%, transparent 95%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 20%, transparent 95%);
 }
 
-.grid-fade {
-  background-image:
-    linear-gradient(rgba(233, 237, 249, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(233, 237, 249, 0.035) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+/** Soft amber halo used behind hero metrics & primary calls to action. */
+.glow-amber {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent),
+    0 8px 32px -8px color-mix(in oklab, var(--primary) 45%, transparent);
 }
 
-.brand-gradient {
-  background: linear-gradient(135deg, #5b78ff, #2fb5b8);
-}
-
-.text-gradient {
-  background: linear-gradient(120deg, #b6c3ff, #7c93ff 40%, #4fd1d3);
+.text-gradient-amber {
+  background-image: linear-gradient(110deg, var(--foreground) 0%, var(--primary) 70%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* ---------- Reveal-on-scroll + growing bars ---------- */
-.rv {
-  opacity: 0;
-  transform: translateY(16px);
-  transition:
-    opacity 0.6s ease,
-    transform 0.6s ease;
-}
-.rv.in {
-  opacity: 1;
-  transform: none;
-}
-.bar-fill {
-  display: block;
-  height: 100%;
-  width: 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), var(--aqua));
-  transition: width 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0s);
-}
-.in .bar-fill {
-  width: var(--w);
+/** Tabular, slashed-zero numerals for money/quantity columns. */
+.num {
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: "tnum", "zero";
 }
 
-/* ---------- Keyframes ---------- */
-@keyframes up {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes inl {
-  from { opacity: 0; transform: translateX(-18px); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes inr {
-  from { opacity: 0; transform: translateX(18px); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes pop {
-  from { transform: scale(0.35) rotate(-12deg); opacity: 0; }
-  to { transform: none; opacity: 1; }
-}
-@keyframes pulse {
-  to { opacity: 0.45; }
-}
-@keyframes draw {
-  to { stroke-dashoffset: 0; }
-}
-@keyframes bounce-dot {
-  50% { transform: translateY(-7px); opacity: 0.4; }
-}
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes modal-in {
-  from { opacity: 0; transform: translateY(16px) scale(0.96); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes slide-left {
-  from { transform: translateX(100%); }
-  to { transform: none; }
-}
-@keyframes slide-up {
-  from { transform: translateY(100%); }
-  to { transform: none; }
-}
-@keyframes drop-in {
-  from { opacity: 0; transform: translateY(-100%); }
-  to { opacity: 1; transform: none; }
+/* ───────────────────────────── Keyframes (sp- prefixed) ──────────────────── */
+
+@keyframes sp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.anim-fade { animation: fade-in 0.3s ease both; }
-.anim-modal { animation: modal-in 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; }
-.anim-drop { animation: drop-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-.anim-sheet { animation: slide-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-@media (min-width: 768px) {
-  .anim-sheet { animation: slide-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-}
-.anim-dot { animation: bounce-dot 1s infinite; }
-.anim-pop { animation: pop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1); }
-.anim-pulse { animation: pulse 0.8s ease-in-out infinite alternate; }
-
-/* ---------- Reader typography ---------- */
-.book {
-  font-family: var(--font-serif);
-  font-size: 1.15rem;
-  line-height: 1.8;
-}
-.book p.t {
-  margin: 0 0 1.1em;
-  text-align: justify;
-  hyphens: auto;
-  color: #d5dbee;
-}
-.book p.t:first-of-type::first-letter {
-  float: left;
-  font-size: 3.4em;
-  line-height: 0.85;
-  padding: 6px 10px 0 0;
-  color: var(--accent);
-}
-@media (max-width: 520px) {
-  .book p.t { text-align: left; }
+@keyframes sp-scan {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
 }
 
-/* ---------- Visualizations (reader pages) ---------- */
-.vs {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 8px 0;
-  opacity: 0;
-  animation: up 0.6s ease forwards;
-  position: relative;
+@keyframes sp-shimmer {
+  to {
+    background-position: -200% 0;
+  }
 }
-.vs:not(:last-child)::after {
-  content: "";
+
+@keyframes sp-ping {
+  75%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes sp-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.sp-fade-up {
+  animation: sp-fade-up 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--sp-delay, 0ms);
+}
+
+.sp-scan-line {
   position: absolute;
-  left: 13px;
-  top: 38px;
-  bottom: -4px;
-  width: 2px;
-  background: var(--line-strong);
+  inset-inline: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  box-shadow: 0 0 18px 2px color-mix(in oklab, var(--primary) 70%, transparent);
+  animation: sp-scan 2.4s ease-in-out infinite;
 }
-.vn {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #0a0f1f;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: 700 0.85rem var(--font-sans);
+
+.sp-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--foreground) 8%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: sp-shimmer 1.8s linear infinite;
 }
-.vc > div {
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 0.9rem;
-  opacity: 0;
+
+.sp-ping {
+  animation: sp-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
-.vc > div:first-child {
-  background: var(--tint);
-  animation: inl 0.7s ease forwards;
-}
-.vc > div:last-child {
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  animation: inr 0.7s ease 0.15s forwards;
-}
-.vt-root {
-  animation: up 0.5s both;
-}
-.vt-kid {
-  opacity: 0;
-  animation: up 0.6s ease forwards;
-}
-.plot-line {
+
+.sp-draw {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: draw 2.2s ease forwards;
+  animation: sp-draw 1.6s ease forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
-    transition: none !important;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .rv, .vs, .vc > div, .vt-root, .vt-kid {
-    opacity: 1 !important;
-    transform: none !important;
+}
+
+/*
+ * Print / "Export to PDF": force the light token set so exported documents are
+ * always white-paper friendly, regardless of the user's on-screen theme.
+ */
+@media print {
+  :root,
+  .dark {
+    --background: #fff;
+    --foreground: #111;
+    --card: #fff;
+    --card-foreground: #111;
+    --popover: #fff;
+    --popover-foreground: #111;
+    --muted: oklch(0.96 0.005 255);
+    --muted-foreground: oklch(0.45 0.02 262);
+    --accent: oklch(0.96 0.005 255);
+    --border: oklch(0.88 0.006 258);
+    --brand: oklch(0.5 0.14 55);
+    --success: oklch(0.5 0.14 158);
+    --warning: oklch(0.55 0.15 62);
+    --info: oklch(0.5 0.14 245);
+    --destructive: oklch(0.55 0.22 27);
+    color-scheme: light;
   }
-  .plot-line { stroke-dashoffset: 0; }
-  .bar-fill { width: var(--w); }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
 }

@@ -1,51 +1,71 @@
-"use client";
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-
-interface CardProps {
-  id?: string;
-  title?: ReactNode;
-  sub?: ReactNode;
-  eyebrow?: string;
-  children?: ReactNode;
-  className?: string;
-}
-
-/** Surface panel that fades/slides in (and animates its bars) when scrolled into view. */
-export function Card({ id, title, sub, eyebrow, children, className = "" }: CardProps) {
-  const ref = useRef<HTMLElement>(null);
-  const [shown, setShown] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setShown(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.06 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
+function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <section
-      ref={ref}
-      id={id}
-      className={`rv ${shown ? "in" : ""} rounded-2xl border border-line bg-surface/80 p-5 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] backdrop-blur-sm sm:p-6 ${className}`}
-    >
-      {eyebrow && (
-        <p className="mb-1 font-mono text-[11px] font-semibold tracking-[0.18em] text-accent uppercase">
-          {eyebrow}
-        </p>
+    <div
+      data-slot="card"
+      className={cn(
+        "flex flex-col gap-4 rounded-xl border border-border bg-card py-5 text-card-foreground shadow-sm transition-colors",
+        className,
       )}
-      {title && <h2 className="text-xl font-semibold tracking-tight">{title}</h2>}
-      {sub && <p className="mt-1 text-sm leading-6 text-mute">{sub}</p>}
-      {children}
-    </section>
+      {...props}
+    />
   );
 }
+
+function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-header"
+      className={cn("grid auto-rows-min gap-1.5 px-5 has-data-[slot=card-action]:grid-cols-[1fr_auto]", className)}
+      {...props}
+    />
+  );
+}
+
+function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-title"
+      className={cn("leading-none font-semibold tracking-tight", className)}
+      {...props}
+    />
+  );
+}
+
+function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-description"
+      className={cn("text-sm text-muted-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+function CardAction({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-action"
+      className={cn("col-start-2 row-span-2 row-start-1 self-start justify-self-end", className)}
+      {...props}
+    />
+  );
+}
+
+function CardContent({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-slot="card-content" className={cn("px-5", className)} {...props} />;
+}
+
+function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-footer"
+      className={cn("flex items-center px-5", className)}
+      {...props}
+    />
+  );
+}
+
+export { Card, CardHeader, CardFooter, CardTitle, CardAction, CardDescription, CardContent };

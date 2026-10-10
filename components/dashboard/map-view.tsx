@@ -6,7 +6,7 @@ import { loadExtras, loadMap } from "@/lib/atlas/client";
 import type { FieldExtras, FieldMap, Tier } from "@/lib/atlas/types";
 import { AnimatedScene } from "@/components/atlas/animated-scene";
 import { Async } from "@/components/ui/async-boundary";
-import { Card } from "@/components/ui/card";
+import { Card } from "@/components/atlas/card";
 import { ConceptNode } from "./concept-node";
 
 interface MapViewProps {
