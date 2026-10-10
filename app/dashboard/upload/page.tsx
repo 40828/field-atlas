@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import Link from "next/link";
+import { Lock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { UploadWizard } from "@/components/solar/upload/upload-wizard";
+import { getEntitlement } from "@/lib/billing/entitlements";
+import { requirePageSession } from "@/lib/solar/server/session";
 
 export const metadata: Metadata = { title: "New Proposal" };
 
@@ -15,12 +23,45 @@ export default function UploadPage() {
             From blueprint to bid in minutes
           </h1>
           <p className="mt-2 max-w-2xl text-pretty text-muted-foreground">
-            Upload a PDF roof plan, tell us about the site, and we&apos;ll generate an engineered
-            proposal with a fully itemized bill of materials.
+            Upload a PDF roof plan, tell us about the site, and we&apos;ll draft a proposal with a
+            fully itemized bill of materials for you to review and edit.
           </p>
         </header>
-        <UploadWizard />
+        <Suspense fallback={<Skeleton className="h-[28rem] rounded-xl" />}>
+          <Gate />
+        </Suspense>
       </div>
     </div>
   );
+}
+
+/** Resolves the caller's account + plan; shows the paywall instead of the wizard when exhausted. */
+async function Gate() {
+  const { accountId } = await requirePageSession();
+  const e = await getEntitlement(accountId);
+
+  if (e.proposalsRemaining !== null && e.proposalsRemaining <= 0) {
+    return (
+      <Card className="items-center gap-4 p-10 text-center">
+        <span className="grid size-12 place-items-center rounded-xl bg-primary/15 text-brand">
+          <Lock className="size-6" />
+        </span>
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">
+            {e.plan === "free" ? "You've used your free proposals" : "You've reached your plan's proposal limit"}
+          </h2>
+          <p className="max-w-md text-sm text-muted-foreground">
+            {e.plan === "free"
+              ? "Start a plan to keep turning blueprints into proposals. Every paid plan begins with a 14-day trial."
+              : `Your ${e.planName} plan includes ${e.proposalLimit} proposals per billing period. Upgrade to keep going.`}
+          </p>
+        </div>
+        <Button asChild size="lg">
+          <Link href="/dashboard/billing">View plans</Link>
+        </Button>
+      </Card>
+    );
+  }
+
+  return <UploadWizard accountId={accountId} />;
 }

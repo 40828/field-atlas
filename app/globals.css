@@ -294,6 +294,11 @@
   animation: sp-draw 1.6s ease forwards;
 }
 
+/* Smooth in-page anchor scrolling (marketing nav); disabled under reduced motion below. */
+html {
+  scroll-behavior: smooth;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

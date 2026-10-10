@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s · Voltline",
   },
   description:
-    "Turn commercial roof blueprints into engineered proposals and a priced bill of materials in minutes. Built for solar and roofing contractors.",
+    "Turn commercial roof blueprints into draft proposals and a priced bill of materials in minutes. Built for solar and roofing contractors.",
 };
 
 export const viewport: Viewport = {

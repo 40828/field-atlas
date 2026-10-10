@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { AlertCircle, ArrowLeft, CheckCircle2, FileText, Loader2, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,9 @@ import type { SiteMetadata } from "@/lib/solar/schemas";
 
 export const GENERATION_STAGES = [
   "Drafting executive summary",
-  "Cross-checking structural codes",
-  "Aligning with local zoning",
-  "Pricing bill of materials",
+  "Building the verification checklist",
+  "Taking off quantities",
+  "Pricing with default unit costs",
 ] as const;
 
 interface ReviewStepProps {
@@ -25,6 +26,7 @@ interface ReviewStepProps {
   /** Index of the generation stage currently running. */
   generationStage: number;
   error: string | null;
+  limitReached?: boolean;
   onBack: () => void;
   onGenerate: () => void;
 }
@@ -46,6 +48,7 @@ export function ReviewStep({
   generating,
   generationStage,
   error,
+  limitReached,
   onBack,
   onGenerate,
 }: ReviewStepProps) {
@@ -59,7 +62,7 @@ export function ReviewStep({
           <dl className="divide-y divide-border">
             <Row label="File" value={fileName} />
             <Row label="Size" value={formatBytes(fileSize)} />
-            <Row label="Sheets parsed" value={String(analysis.pageCount)} />
+            <Row label="Sheets read" value={String(analysis.pageCount)} />
             <Row label="Roof area" value={`${formatInt(analysis.squareFeet)} sq ft`} />
             <Row label="Roof planes" value={String(analysis.roofPlanes)} />
             <Row label="Confidence" value={`${Math.round(analysis.confidence * 100)}%`} />
@@ -98,7 +101,18 @@ export function ReviewStep({
 
       {error && (
         <div role="alert" className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 size-4 shrink-0" /> {error}
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {error}
+            {limitReached && (
+              <>
+                {" "}
+                <Link href="/dashboard/billing" className="font-semibold underline underline-offset-4">
+                  View plans
+                </Link>
+              </>
+            )}
+          </span>
         </div>
       )}
 

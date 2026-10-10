@@ -6,6 +6,7 @@ import { Suspense, useState, useSyncExternalStore, type ReactNode } from "react"
 import { Dialog as DialogPrimitive } from "radix-ui";
 import {
   Boxes,
+  CreditCard,
   ChevronRight,
   FilePlus2,
   LayoutDashboard,
@@ -17,6 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -37,6 +39,7 @@ interface NavItem {
 const WORKSPACE_NAV: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/upload", label: "New Proposal", icon: FilePlus2 },
+  { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
 ];
 
 const SOON_NAV: NavItem[] = [
@@ -217,13 +220,7 @@ function SidebarBody({ collapsed, onNavigate }: { collapsed: boolean; onNavigate
             collapsed && "lg:justify-center lg:bg-transparent lg:p-0",
           )}
         >
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold">
-            SR
-          </span>
-          <div className={cn("min-w-0 leading-tight", collapsed && "lg:hidden")}>
-            <p className="truncate text-[13px] font-medium">Sierra Roofing & Solar</p>
-            <p className="truncate text-xs text-muted-foreground">Estimator · Demo org</p>
-          </div>
+          <UserButton showName={!collapsed} appearance={{ elements: { rootBox: "min-w-0" } }} />
         </div>
       </div>
     </div>
@@ -240,6 +237,7 @@ function Breadcrumb() {
     const label =
       part === "dashboard" ? "Dashboard"
       : part === "upload" ? "New Proposal"
+      : part === "billing" ? "Billing"
       : part === "proposals" ? "Proposals"
       : part.toUpperCase();
     return { href, label, last: i === parts.length - 1 };

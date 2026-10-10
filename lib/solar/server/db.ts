@@ -1,6 +1,9 @@
+import "server-only";
 import { io } from "next/cache";
+import { and, asc, count, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { computeBomSummary } from "../bom";
-import { analyzeBlueprint, generateBom, generateDocument, type SiteParams } from "../generate";
+import { generateBom, generateDocument, type SiteParams } from "../generate";
+import type { SiteMetadata } from "../schemas";
 import type {
   ApprovalState,
   BlueprintAnalysis,
@@ -9,245 +12,339 @@ import type {
   DealOutcome,
   Proposal,
   ProposalDetail,
-  ProposalDocument,
-  ProposalStatus,
 } from "../types";
-import type { SiteMetadata } from "../schemas";
+import { getDb, schema } from "./database/client";
+import type { ProposalRow, UploadRow } from "./database/schema";
+
+const { proposals, bomItems, uploads } = schema;
 
 /**
- * Mock PostgreSQL layer.
+ * Account-scoped repository (Neon Postgres via Drizzle).
  *
- * Mirrors the shape of a relational schema — `proposals`, `proposal_documents`
- * and `bom_items` tables — behind async repository functions with a little
- * simulated network latency. Swap the bodies for Drizzle/Prisma/pg queries and
- * nothing above this file needs to change.
+ * EVERY function takes the caller's `accountId` and filters on it, so a customer can only ever
+ * read or write their own rows. Proposal ids are `PRP-<seq>`; `parseSeq` is the only place
+ * that turns the public id back into a number.
  *
- * The store is pinned to `globalThis` so it survives dev-server hot reloads.
+ * `await io()` marks the work after it as request-time so Cache Components keeps live data out
+ * of the static shell.
  *
  * NOTE: server-only. Never import this module from a Client Component.
  */
 
-interface Store {
-  proposals: Map<string, Proposal>;
-  documents: Map<string, ProposalDocument>;
-  bomItems: Map<string, BomLineItem[]>;
-  nextSeq: number;
-}
+const toId = (seq: number) => `PRP-${seq}`;
+const parseSeq = (id: string): number | null => {
+  const m = /^PRP-(\d{4,6})$/.exec(id);
+  return m ? Number(m[1]) : null;
+};
 
-interface SeedRow {
-  seq: number;
-  projectName: string;
-  clientName: string;
-  address: string;
-  buildingType: Proposal["buildingType"];
-  material: Proposal["material"];
-  jurisdiction: string;
-  zoningCode: string;
-  status: ProposalStatus;
-  approval: ApprovalState;
-  outcome: DealOutcome;
-  squareFeet: number;
-  createdAt: string;
-  synced?: boolean;
-}
-
-const SEED: SeedRow[] = [
-  { seq: 2041, projectName: "Meridian Logistics Hub", clientName: "Meridian Freight Co.", address: "1200 W Buckeye Rd, Phoenix, AZ 85007", buildingType: "industrial", material: "solar-pv-ballasted", jurisdiction: "City of Phoenix, AZ", zoningCode: "A-1", status: "drafted", approval: "pending", outcome: "open", squareFeet: 118_400, createdAt: "2026-10-08T14:22:00Z" },
-  { seq: 2040, projectName: "Harbor Point Retail Center", clientName: "Harbor Point Properties", address: "4410 S Congress Ave, Austin, TX 78745", buildingType: "commercial", material: "tpo-membrane", jurisdiction: "City of Austin, TX", zoningCode: "CS-1", status: "ready", approval: "not-submitted", outcome: "open", squareFeet: 64_200, createdAt: "2026-10-07T18:05:00Z" },
-  { seq: 2039, projectName: "Cedar Ridge Cold Storage", clientName: "Cedar Ridge Foods", address: "7700 Dean Martin Dr, Las Vegas, NV 89118", buildingType: "industrial", material: "standing-seam-metal", jurisdiction: "Clark County, NV", zoningCode: "IL", status: "drafted", approval: "approved", outcome: "won", squareFeet: 92_750, createdAt: "2026-10-05T09:40:00Z", synced: true },
-  { seq: 2038, projectName: "Lakeview Medical Plaza", clientName: "Lakeview Health Partners", address: "880 N Lake Shore Dr, Chicago, IL 60611", buildingType: "commercial", material: "solar-pv-attached", jurisdiction: "City of Chicago, IL", zoningCode: "B3-2", status: "parsing", approval: "not-submitted", outcome: "open", squareFeet: 41_300, createdAt: "2026-10-09T11:12:00Z" },
-  { seq: 2037, projectName: "Sunset Terrace Apartments", clientName: "Sunset Terrace HOA", address: "2150 Sunset Cliffs Blvd, San Diego, CA 92107", buildingType: "residential", material: "epdm-membrane", jurisdiction: "San Diego County, CA", zoningCode: "RM-3", status: "drafted", approval: "changes-requested", outcome: "open", squareFeet: 28_900, createdAt: "2026-10-03T16:30:00Z" },
-  { seq: 2036, projectName: "Ironworks Distribution Center", clientName: "Ironworks Logistics", address: "3300 E Sunset Rd, Las Vegas, NV 89120", buildingType: "industrial", material: "solar-pv-ballasted", jurisdiction: "Clark County, NV", zoningCode: "IL", status: "drafted", approval: "approved", outcome: "won", squareFeet: 134_000, createdAt: "2026-09-29T13:00:00Z", synced: true },
-  { seq: 2035, projectName: "Pioneer Credit Union HQ", clientName: "Pioneer Credit Union", address: "101 W Washington St, Phoenix, AZ 85003", buildingType: "commercial", material: "modified-bitumen", jurisdiction: "City of Phoenix, AZ", zoningCode: "C-2", status: "drafted", approval: "approved", outcome: "lost", squareFeet: 22_400, createdAt: "2026-09-24T10:15:00Z", synced: true },
-  { seq: 2034, projectName: "Gulf Coast Fabrication", clientName: "Gulf Coast Fab & Weld", address: "9120 Lawndale St, Houston, TX 77012", buildingType: "industrial", material: "tpo-membrane", jurisdiction: "City of Houston, TX", zoningCode: "IND-2", status: "drafted", approval: "pending", outcome: "open", squareFeet: 76_500, createdAt: "2026-09-22T15:45:00Z" },
-  { seq: 2033, projectName: "Birchwood Senior Living", clientName: "Birchwood Communities", address: "512 Birchwood Ln, Austin, TX 78704", buildingType: "residential", material: "solar-pv-attached", jurisdiction: "City of Austin, TX", zoningCode: "MF-4", status: "drafted", approval: "approved", outcome: "won", squareFeet: 36_800, createdAt: "2026-09-17T12:20:00Z", synced: true },
-  { seq: 2032, projectName: "Northgate Auto Mall", clientName: "Northgate Automotive Group", address: "4800 N 7th Ave, Phoenix, AZ 85013", buildingType: "commercial", material: "standing-seam-metal", jurisdiction: "City of Phoenix, AZ", zoningCode: "C-3", status: "ready", approval: "not-submitted", outcome: "open", squareFeet: 58_100, createdAt: "2026-09-12T08:50:00Z" },
-  { seq: 2031, projectName: "Trailhead Brewing Co.", clientName: "Trailhead Brewing", address: "1900 Larimer St, Denver, CO 80202", buildingType: "commercial", material: "solar-pv-attached", jurisdiction: "City of Denver, CO", zoningCode: "C-MX", status: "drafted", approval: "approved", outcome: "won", squareFeet: 18_700, createdAt: "2026-09-04T17:10:00Z", synced: true },
-  { seq: 2030, projectName: "Riverbend Warehouse Park", clientName: "Riverbend Industrial REIT", address: "6025 Rail Yard Rd, Memphis, TN 38118", buildingType: "industrial", material: "epdm-membrane", jurisdiction: "Shelby County, TN", zoningCode: "IH", status: "drafted", approval: "approved", outcome: "lost", squareFeet: 104_300, createdAt: "2026-08-28T14:00:00Z" },
-];
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const LATENCY_MS = 60;
-
-const pad = (n: number) => `PRP-${n}`;
-
-function buildSeed(): Store {
-  const store: Store = {
-    proposals: new Map(),
-    documents: new Map(),
-    bomItems: new Map(),
-    nextSeq: Math.max(...SEED.map((s) => s.seq)) + 1,
+function toProposal(r: ProposalRow): Proposal {
+  return {
+    id: toId(r.seq),
+    projectName: r.projectName,
+    clientName: r.clientName,
+    address: r.address,
+    buildingType: r.buildingType,
+    material: r.material,
+    jurisdiction: r.jurisdiction,
+    zoningCode: r.zoningCode,
+    status: r.status,
+    approval: r.approval,
+    outcome: r.outcome,
+    squareFeet: r.squareFeet,
+    fileName: r.fileName,
+    fileSizeBytes: r.fileSizeBytes,
+    pageCount: r.pageCount,
+    estimatedValue: r.estimatedValue,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
   };
-
-  for (const row of SEED) {
-    const id = pad(row.seq);
-    const analysis = analyzeBlueprint({
-      fileName: `${row.projectName.replace(/[^A-Za-z0-9]+/g, "_")}_RoofPlan.pdf`,
-      fileSizeBytes: 3_400_000 + row.seq * 913,
-    });
-    const params: SiteParams = {
-      id,
-      address: row.address,
-      squareFeet: row.squareFeet,
-      buildingType: row.buildingType,
-      material: row.material,
-      jurisdiction: row.jurisdiction,
-      zoningCode: row.zoningCode,
-      clientName: row.clientName,
-      pageCount: analysis.pageCount,
-      generatedAt: row.createdAt,
-    };
-    const bom = generateBom(params);
-    const total = computeBomSummary(bom).total;
-
-    store.proposals.set(id, {
-      id,
-      projectName: row.projectName,
-      clientName: row.clientName,
-      address: row.address,
-      buildingType: row.buildingType,
-      material: row.material,
-      jurisdiction: row.jurisdiction,
-      zoningCode: row.zoningCode,
-      status: row.status,
-      approval: row.approval,
-      outcome: row.outcome,
-      squareFeet: row.squareFeet,
-      fileName: analysis.fileName,
-      fileSizeBytes: analysis.fileSizeBytes,
-      pageCount: analysis.pageCount,
-      estimatedValue: Math.round(total),
-      crmSyncedAt: row.synced ? row.createdAt : null,
-      createdAt: row.createdAt,
-      updatedAt: row.createdAt,
-    });
-    store.bomItems.set(id, bom);
-    store.documents.set(id, generateDocument(params));
-  }
-  return store;
-}
-
-const globalForDb = globalThis as typeof globalThis & { __voltlineStore?: Store };
-
-/**
- * Acquire the store. `io()` marks everything after it as request-time work, so
- * Cache Components keeps these reads out of the static shell (data is live).
- */
-async function connect(): Promise<Store> {
-  await io();
-  await sleep(LATENCY_MS);
-  return (globalForDb.__voltlineStore ??= buildSeed());
 }
 
 /* ───────────────────────────────── Queries ─────────────────────────────── */
 
-export async function listProposals(): Promise<Proposal[]> {
-  const db = await connect();
-  return [...db.proposals.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export async function listProposals(accountId: string): Promise<Proposal[]> {
+  await io();
+  const rows = await getDb()
+    .select()
+    .from(proposals)
+    .where(eq(proposals.accountId, accountId))
+    .orderBy(desc(proposals.createdAt))
+    .limit(500);
+  return rows.map(toProposal);
 }
 
-export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  const db = await connect();
-  const all = [...db.proposals.values()];
-  const won = all.filter((p) => p.outcome === "won").length;
-  const lost = all.filter((p) => p.outcome === "lost").length;
+const DAY_MS = 86_400_000;
+
+/** Percent change, or `null` when there is nothing earlier to compare against. */
+const pctChange = (current: number, previous: number) =>
+  previous === 0 ? null : Math.round(((current - previous) / previous) * 1000) / 10;
+
+function winRate(rows: { outcome: DealOutcome }[]) {
+  const won = rows.filter((r) => r.outcome === "won").length;
+  const lost = rows.filter((r) => r.outcome === "lost").length;
+  return won + lost === 0 ? 0 : Math.round((won / (won + lost)) * 100);
+}
+
+export async function getDashboardMetrics(accountId: string): Promise<DashboardMetrics> {
+  await io();
+  const rows = await getDb()
+    .select({
+      outcome: proposals.outcome,
+      approval: proposals.approval,
+      squareFeet: proposals.squareFeet,
+      createdAt: proposals.createdAt,
+    })
+    .from(proposals)
+    .where(eq(proposals.accountId, accountId));
+
+  const now = Date.now();
+  const recent = rows.filter((r) => now - r.createdAt.getTime() <= 30 * DAY_MS);
+  const prior = rows.filter((r) => {
+    const age = now - r.createdAt.getTime();
+    return age > 30 * DAY_MS && age <= 60 * DAY_MS;
+  });
+  const open = (xs: typeof rows) => xs.filter((r) => r.outcome === "open").length;
+  const pending = (xs: typeof rows) => xs.filter((r) => r.approval === "pending").length;
+  const area = (xs: typeof rows) => xs.reduce((s, r) => s + r.squareFeet, 0);
+
   return {
-    activeProposals: all.filter((p) => p.outcome === "open").length,
-    totalSquareFeet: all.reduce((sum, p) => sum + p.squareFeet, 0),
-    pendingApprovals: all.filter((p) => p.approval === "pending").length,
-    winRate: won + lost === 0 ? 0 : Math.round((won / (won + lost)) * 100),
-    // Period-over-period deltas would come from a time-bucketed SQL query.
-    trends: { activeProposals: 12.5, totalSquareFeet: 18.2, pendingApprovals: -8.0, winRate: 4.3 },
+    activeProposals: open(rows),
+    totalSquareFeet: area(rows),
+    pendingApprovals: pending(rows),
+    winRate: winRate(rows),
+    // Trend = last 30 days vs the 30 days before that (null when there is no earlier data).
+    trends: {
+      activeProposals: pctChange(open(recent), open(prior)),
+      totalSquareFeet: pctChange(area(recent), area(prior)),
+      pendingApprovals: pctChange(pending(recent), pending(prior)),
+      winRate: pctChange(winRate(recent), winRate(prior)),
+    },
   };
 }
 
-export async function getProposalDetail(id: string): Promise<ProposalDetail | null> {
-  const db = await connect();
-  const proposal = db.proposals.get(id);
-  const document = db.documents.get(id);
-  const bom = db.bomItems.get(id);
-  if (!proposal || !document || !bom) return null;
-  // Return copies so callers can never mutate the "table" in place.
+export async function getProposalDetail(accountId: string, id: string): Promise<ProposalDetail | null> {
+  await io();
+  const seq = parseSeq(id);
+  if (seq === null) return null;
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(proposals)
+    .where(and(eq(proposals.seq, seq), eq(proposals.accountId, accountId)))
+    .limit(1);
+  if (!row) return null;
+  const items = await db.select().from(bomItems).where(eq(bomItems.proposalSeq, seq)).orderBy(asc(bomItems.position));
   return {
-    proposal: { ...proposal },
-    document: structuredClone(document),
-    bom: bom.map((b) => ({ ...b })),
+    proposal: toProposal(row),
+    document: row.document,
+    bom: items.map(({ id: lineId, category, sku, description, unit, quantity, unitCost }) => ({
+      id: lineId,
+      category,
+      sku,
+      description,
+      unit,
+      quantity,
+      unitCost,
+    })),
   };
+}
+
+/* ───────────────────────────────── Usage counts ────────────────────────── */
+
+/** Proposals created by an account, optionally only since `since` (for per-period plan limits). */
+export async function countProposals(accountId: string, since?: Date | null): Promise<number> {
+  await io();
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(proposals)
+    .where(and(eq(proposals.accountId, accountId), since ? gte(proposals.createdAt, since) : undefined));
+  return row?.n ?? 0;
+}
+
+/** Blueprint analyses run since `since`; each one costs AI credits, so this feeds the daily cap. */
+export async function countUploadsSince(accountId: string, since: Date): Promise<number> {
+  await io();
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(uploads)
+    .where(and(eq(uploads.accountId, accountId), gte(uploads.createdAt, since)));
+  return row?.n ?? 0;
+}
+
+/* ──────────────────────────────── Uploads ──────────────────────────────── */
+
+export async function insertUpload(input: {
+  accountId: string;
+  userId: string;
+  pathname: string;
+  fileName: string;
+  fileSizeBytes: number;
+  analysis: Omit<BlueprintAnalysis, "uploadId">;
+}): Promise<BlueprintAnalysis> {
+  await io();
+  const [row] = await getDb()
+    .insert(uploads)
+    .values({
+      accountId: input.accountId,
+      userId: input.userId,
+      pathname: input.pathname,
+      fileName: input.fileName,
+      fileSizeBytes: input.fileSizeBytes,
+      analysis: input.analysis,
+    })
+    .returning({ id: uploads.id });
+  return { ...input.analysis, uploadId: row.id };
+}
+
+export async function getUpload(accountId: string, uploadId: string): Promise<UploadRow | null> {
+  await io();
+  const [row] = await getDb()
+    .select()
+    .from(uploads)
+    .where(and(eq(uploads.id, uploadId), eq(uploads.accountId, accountId)))
+    .limit(1);
+  return row ?? null;
 }
 
 /* ──────────────────────────────── Mutations ────────────────────────────── */
 
-export async function insertProposal(
-  analysis: BlueprintAnalysis,
-  meta: SiteMetadata,
-): Promise<Proposal> {
-  const db = await connect();
-  const id = pad(db.nextSeq++);
-  const now = new Date().toISOString();
+/**
+ * Create a proposal (and its BOM) from a stored upload. The upload can only be used once:
+ * we first "claim" it by setting `proposal_seq`, then write the proposal + BOM in a single
+ * atomic batch; if that fails the claim is released.
+ */
+export async function createProposalFromUpload(input: {
+  accountId: string;
+  userId: string;
+  upload: UploadRow;
+  meta: SiteMetadata;
+}): Promise<Proposal | null> {
+  await io();
+  const db = getDb();
+  const { upload, meta, accountId, userId } = input;
 
+  const reserved = await db.execute(sql`select nextval(pg_get_serial_sequence('proposals', 'seq')) as seq`);
+  const seq = Number((reserved.rows[0] as { seq: string | number }).seq);
+
+  const claimed = await db
+    .update(uploads)
+    .set({ proposalSeq: seq })
+    .where(and(eq(uploads.id, upload.id), eq(uploads.accountId, accountId), isNull(uploads.proposalSeq)))
+    .returning({ id: uploads.id });
+  if (claimed.length === 0) return null;
+
+  const analysis: BlueprintAnalysis = { ...upload.analysis, uploadId: upload.id };
+  const now = new Date();
   const params: SiteParams = {
-    id,
+    id: upload.id,
     address: meta.address,
-    squareFeet: analysis.squareFeet,
     buildingType: meta.buildingType,
     material: meta.material,
     jurisdiction: meta.jurisdiction,
     zoningCode: meta.zoningCode,
     clientName: meta.clientName,
-    pageCount: analysis.pageCount,
-    generatedAt: now,
+    generatedAt: now.toISOString(),
+    analysis,
   };
   const bom = generateBom(params);
   const document = generateDocument(params);
 
-  const proposal: Proposal = {
-    id,
-    projectName: meta.address.split(",")[0],
-    clientName: meta.clientName,
-    address: meta.address,
-    buildingType: meta.buildingType,
-    material: meta.material,
-    jurisdiction: meta.jurisdiction,
-    zoningCode: meta.zoningCode,
-    status: "drafted",
-    approval: "not-submitted",
-    outcome: "open",
-    squareFeet: analysis.squareFeet,
-    fileName: analysis.fileName,
-    fileSizeBytes: analysis.fileSizeBytes,
-    pageCount: analysis.pageCount,
-    estimatedValue: Math.round(computeBomSummary(bom).total),
-    crmSyncedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  };
+  try {
+    await db.batch([
+      db.insert(proposals).values({
+        seq,
+        accountId,
+        createdBy: userId,
+        projectName: meta.address.split(",")[0],
+        clientName: meta.clientName,
+        address: meta.address,
+        buildingType: meta.buildingType,
+        material: meta.material,
+        jurisdiction: meta.jurisdiction,
+        zoningCode: meta.zoningCode,
+        status: "drafted",
+        squareFeet: analysis.squareFeet,
+        fileName: upload.fileName,
+        fileSizeBytes: upload.fileSizeBytes,
+        pageCount: analysis.pageCount,
+        estimatedValue: Math.round(computeBomSummary(bom).total),
+        document,
+        uploadId: upload.id,
+        createdAt: now,
+        updatedAt: now,
+      }),
+      db.insert(bomItems).values(
+        bom.map((b, position) => ({
+          proposalSeq: seq,
+          position,
+          id: b.id,
+          category: b.category,
+          sku: b.sku,
+          description: b.description,
+          unit: b.unit,
+          quantity: b.quantity,
+          unitCost: b.unitCost,
+        })),
+      ),
+    ]);
+  } catch (err) {
+    await db.update(uploads).set({ proposalSeq: null }).where(eq(uploads.id, upload.id));
+    throw err;
+  }
 
-  db.proposals.set(id, proposal);
-  db.documents.set(id, document);
-  db.bomItems.set(id, bom);
-  return { ...proposal };
+  const [row] = await db.select().from(proposals).where(eq(proposals.seq, seq)).limit(1);
+  return toProposal(row);
 }
 
-export async function replaceBomItems(id: string, items: BomLineItem[]): Promise<Proposal | null> {
-  const db = await connect();
-  const proposal = db.proposals.get(id);
-  if (!proposal) return null;
-  db.bomItems.set(id, items.map((i) => ({ ...i })));
-  const updated: Proposal = {
-    ...proposal,
-    estimatedValue: Math.round(computeBomSummary(items).total),
-    updatedAt: new Date().toISOString(),
-  };
-  db.proposals.set(id, updated);
-  return { ...updated };
+export async function replaceBomItems(accountId: string, id: string, items: BomLineItem[]): Promise<Proposal | null> {
+  await io();
+  const seq = parseSeq(id);
+  if (seq === null) return null;
+  const db = getDb();
+  const [owned] = await db
+    .select({ seq: proposals.seq })
+    .from(proposals)
+    .where(and(eq(proposals.seq, seq), eq(proposals.accountId, accountId)))
+    .limit(1);
+  if (!owned) return null;
+
+  const now = new Date();
+  const [, , updated] = await db.batch([
+    db.delete(bomItems).where(eq(bomItems.proposalSeq, seq)),
+    db.insert(bomItems).values(
+      items.map((b, position) => ({
+        proposalSeq: seq,
+        position,
+        id: b.id,
+        category: b.category,
+        sku: b.sku,
+        description: b.description,
+        unit: b.unit,
+        quantity: b.quantity,
+        unitCost: b.unitCost,
+      })),
+    ),
+    db
+      .update(proposals)
+      .set({ estimatedValue: Math.round(computeBomSummary(items).total), updatedAt: now })
+      .where(and(eq(proposals.seq, seq), eq(proposals.accountId, accountId)))
+      .returning(),
+  ]);
+  return updated[0] ? toProposal(updated[0]) : null;
 }
 
-export async function markCrmSynced(id: string): Promise<Proposal | null> {
-  const db = await connect();
-  const proposal = db.proposals.get(id);
-  if (!proposal) return null;
-  const now = new Date().toISOString();
-  const updated: Proposal = { ...proposal, crmSyncedAt: now, updatedAt: now };
-  db.proposals.set(id, updated);
-  return { ...updated };
+export async function updateProposalWorkflow(
+  accountId: string,
+  id: string,
+  patch: { approval?: ApprovalState; outcome?: DealOutcome },
+): Promise<Proposal | null> {
+  await io();
+  const seq = parseSeq(id);
+  if (seq === null) return null;
+  const [row] = await getDb()
+    .update(proposals)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(and(eq(proposals.seq, seq), eq(proposals.accountId, accountId)))
+    .returning();
+  return row ? toProposal(row) : null;
 }

@@ -21,7 +21,7 @@ import { CheckBadge } from "../status-badge";
 const SECTIONS = [
   { id: "summary", label: "Executive Summary" },
   { id: "dimensions", label: "Dimensions Found" },
-  { id: "compliance", label: "Structural Compliance" },
+  { id: "compliance", label: "Code Checklist" },
   { id: "zoning", label: "Zoning Alignment" },
 ] as const;
 
@@ -135,7 +135,7 @@ export function DocumentViewer({ proposal, document: doc, summary, className }: 
               {BUILDING_TYPE_LABELS[proposal.buildingType]} · {MATERIAL_LABELS[proposal.material]}
             </p>
             <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">{proposal.projectName}</h1>
-            <p className="mt-1 text-muted-foreground">Engineering & Material Proposal</p>
+            <p className="mt-1 text-muted-foreground">Material & Labor Proposal</p>
             <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
               <div className="flex items-start gap-2">
                 <Building2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -178,9 +178,12 @@ export function DocumentViewer({ proposal, document: doc, summary, className }: 
 
           {/* 03 Compliance */}
           <section className="mb-12">
-            <SectionHeading index={3} id="compliance">Structural Engineering Compliance</SectionHeading>
+            <SectionHeading index={3} id="compliance">Code & Structural Checklist</SectionHeading>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Voltline has not verified these items. Each is a point your engineer of record or the local authority must confirm before permit submission.
+            </p>
             <div className="mb-4 flex flex-wrap gap-2 text-xs">
-              <Badge variant="success">{counts.pass} passed</Badge>
+              {counts.pass > 0 && <Badge variant="success">{counts.pass} confirmed</Badge>}
               <Badge variant="warning">{counts.review} need review</Badge>
               {counts.fail > 0 && <Badge variant="destructive">{counts.fail} failed</Badge>}
             </div>
@@ -208,7 +211,7 @@ export function DocumentViewer({ proposal, document: doc, summary, className }: 
 
           {/* 04 Zoning */}
           <section>
-            <SectionHeading index={4} id="zoning">Local Zoning Alignment</SectionHeading>
+            <SectionHeading index={4} id="zoning">Zoning & Permit Checklist</SectionHeading>
             <p className="mb-4 text-sm text-muted-foreground">
               {proposal.jurisdiction} · Zoning <span className="font-mono text-foreground">{proposal.zoningCode}</span>
             </p>
@@ -237,8 +240,10 @@ export function DocumentViewer({ proposal, document: doc, summary, className }: 
           </section>
 
           <footer className="mt-12 border-t border-border pt-4 text-xs text-muted-foreground">
-            Generated automatically from the uploaded blueprint set. Final design requires review and seal by a
-            licensed engineer of record prior to permit submission.
+            Drafted from measurements an AI model read from the uploaded plan set, priced with default unit costs.
+            Verify every quantity and price before relying on this document. It is not engineering advice: structural,
+            wind, snow, fire and zoning compliance must be confirmed by a licensed engineer of record and the authority
+            having jurisdiction before permit submission.
           </footer>
         </article>
       </div>

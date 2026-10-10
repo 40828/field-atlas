@@ -8,7 +8,7 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
-  CloudUpload,
+  Download,
   FileDown,
   FileText,
   Loader2,
@@ -21,14 +21,15 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { saveBomAction } from "@/lib/solar/actions";
+import { saveBomAction, updateWorkflowAction } from "@/lib/solar/actions";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { APPROVAL_LABELS } from "@/lib/solar/options";
 import { computeBomSummary } from "@/lib/solar/bom";
 import { formatCurrency, formatDate, formatDateTime, formatInt } from "@/lib/solar/format";
 import { bomLineSchema, saveBomSchema } from "@/lib/solar/schemas";
-import type { BomCategory, BomLineItem, ProposalDetail } from "@/lib/solar/types";
+import type { ApprovalState, BomCategory, BomLineItem, DealOutcome, ProposalDetail } from "@/lib/solar/types";
 import { ApprovalBadge, StatusBadge } from "../status-badge";
 import { BomTable, type BomFieldErrors } from "./bom-table";
-import { CrmSyncDialog } from "./crm-sync-dialog";
 import { DocumentViewer } from "./document-viewer";
 
 type Pane = "document" | "bom";
@@ -64,8 +65,9 @@ export function ProposalWorkspace({ detail }: { detail: ProposalDetail }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
-  const [crmOpen, setCrmOpen] = useState(false);
-  const [crmSyncedAt, setCrmSyncedAt] = useState(proposal.crmSyncedAt);
+  const [approval, setApproval] = useState<ApprovalState>(proposal.approval);
+  const [outcome, setOutcome] = useState<DealOutcome>(proposal.outcome);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
   const newRowSeq = useRef(0);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
@@ -163,6 +165,39 @@ export function ProposalWorkspace({ detail }: { detail: ProposalDetail }) {
     setPane("bom");
   }
 
+  async function changeWorkflow(patch: { approval?: ApprovalState; outcome?: DealOutcome }) {
+    const prev = { approval, outcome };
+    if (patch.approval) setApproval(patch.approval);
+    if (patch.outcome) setOutcome(patch.outcome);
+    setWorkflowError(null);
+    const res = await updateWorkflowAction({ proposalId: proposal.id, ...patch });
+    if (!res.ok) {
+      setApproval(prev.approval);
+      setOutcome(prev.outcome);
+      setWorkflowError(res.error);
+    }
+  }
+
+  /** Download the saved BOM as CSV. Cells that a spreadsheet could read as formulas are neutralised. */
+  function exportCsv() {
+    const cell = (v: string | number) => {
+      const s = String(v);
+      const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
+    const rows: (string | number)[][] = [
+      ["Category", "SKU", "Description", "Unit", "Quantity", "Unit cost", "Line total"],
+      ...saved.map((i) => [i.category, i.sku, i.description, i.unit, i.quantity, i.unitCost, Math.round(i.quantity * i.unitCost * 100) / 100]),
+    ];
+    const blob = new Blob([rows.map((r) => r.map(cell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = window.document.createElement("a");
+    a.href = url;
+    a.download = `${proposal.id}-bom.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function exportPdf() {
     // Print stylesheet shows both panes stacked; "Save as PDF" in the dialog produces the file.
     window.print();
@@ -189,11 +224,9 @@ export function ProposalWorkspace({ detail }: { detail: ProposalDetail }) {
               <h1 className="text-xl font-semibold tracking-tight text-balance sm:text-2xl">{proposal.projectName}</h1>
               <Badge variant="outline" className="font-mono">{proposal.id}</Badge>
               <StatusBadge status={proposal.status} />
-              <ApprovalBadge approval={proposal.approval} />
-              {crmSyncedAt && (
-                <Badge variant="success">
-                  <CheckCircle2 /> CRM synced
-                </Badge>
+              <ApprovalBadge approval={approval} />
+              {outcome !== "open" && (
+                <Badge variant={outcome === "won" ? "success" : "secondary"}>{outcome === "won" ? "Won" : "Lost"}</Badge>
               )}
             </div>
             <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
@@ -202,6 +235,35 @@ export function ProposalWorkspace({ detail }: { detail: ProposalDetail }) {
               <span className="inline-flex items-center gap-1.5"><Ruler className="size-3.5" />{formatInt(proposal.squareFeet)} sq ft</span>
               <span className="inline-flex items-center gap-1.5"><CalendarDays className="size-3.5" />{formatDate(proposal.createdAt)}</span>
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3 print:hidden">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                Approval
+                <Select value={approval} onValueChange={(v) => changeWorkflow({ approval: v as ApprovalState })}>
+                  <SelectTrigger className="h-8 w-44 text-xs" aria-label="Approval status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(APPROVAL_LABELS) as ApprovalState[]).map((k) => (
+                      <SelectItem key={k} value={k}>{APPROVAL_LABELS[k]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                Deal
+                <Select value={outcome} onValueChange={(v) => changeWorkflow({ outcome: v as DealOutcome })}>
+                  <SelectTrigger className="h-8 w-28 text-xs" aria-label="Deal outcome">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="won">Won</SelectItem>
+                    <SelectItem value="lost">Lost</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+              {workflowError && <span role="alert" className="text-xs text-destructive">{workflowError}</span>}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 print:hidden">
@@ -212,9 +274,8 @@ export function ProposalWorkspace({ detail }: { detail: ProposalDetail }) {
             <Button variant="outline" onClick={exportPdf}>
               <FileDown /> Export to PDF
             </Button>
-            <Button variant="outline" onClick={() => setCrmOpen(true)}>
-              {crmSyncedAt ? <CheckCircle2 className="text-success" /> : <CloudUpload />}
-              Sync to CRM
+            <Button variant="outline" onClick={exportCsv} disabled={dirty} title={dirty ? "Save your changes first" : undefined}>
+              <Download /> Export BOM (CSV)
             </Button>
             <Button onClick={toggleEditing} aria-pressed={editing} className={cn(editing && "glow-amber")}>
               {editing ? <Check /> : <PencilLine />}
@@ -328,16 +389,6 @@ export function ProposalWorkspace({ detail }: { detail: ProposalDetail }) {
           )}
         </section>
       </div>
-
-      <CrmSyncDialog
-        open={crmOpen}
-        onOpenChange={setCrmOpen}
-        proposal={proposal}
-        total={summary.total}
-        syncedAt={crmSyncedAt}
-        blockedReason={dirty ? "Save or discard your unsaved BOM changes first so the CRM receives the correct amount." : undefined}
-        onSynced={setCrmSyncedAt}
-      />
     </div>
   );
 }

@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { formatBytes, formatInt } from "@/lib/solar/format";
 import { UPLOAD_LIMITS } from "@/lib/solar/options";
-import type { BlueprintAnalysis } from "@/lib/solar/types";
+import Link from "next/link";
+import type { ActionErrorCode, BlueprintAnalysis } from "@/lib/solar/types";
 import { BlueprintScanner } from "./blueprint-scanner";
 import { ANALYSIS_STAGES, type UploadPhase, type UploadedFile } from "./types";
 
@@ -30,6 +31,7 @@ interface DropzoneStepProps {
   stage: number;
   analysis: BlueprintAnalysis | null;
   error: string | null;
+  errorCode?: ActionErrorCode | null;
   onSelect: (file: File) => void;
   onReset: () => void;
   onContinue: () => void;
@@ -42,6 +44,7 @@ export function DropzoneStep({
   stage,
   analysis,
   error,
+  errorCode,
   onSelect,
   onReset,
   onContinue,
@@ -112,7 +115,7 @@ export function DropzoneStep({
             </p>
           </div>
           <p className="relative inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
-            <Lock className="size-3" /> Files are validated server-side and encrypted at rest
+            <Lock className="size-3" /> Stored privately, readable only by your account
           </p>
         </label>
 
@@ -122,7 +125,17 @@ export function DropzoneStep({
             className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
           >
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <span>{error}</span>
+            <span>
+              {error}
+              {errorCode === "limit_reached" && (
+                <>
+                  {" "}
+                  <Link href="/dashboard/billing" className="font-semibold underline underline-offset-4">
+                    View plans
+                  </Link>
+                </>
+              )}
+            </span>
           </div>
         )}
       </div>
@@ -223,8 +236,14 @@ export function DropzoneStep({
           </dl>
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <ShieldCheck className="size-3.5 text-success" />
-            {analysis.pageCount} sheets parsed · checksum <span className="font-mono">{analysis.checksum}</span>
+            {analysis.pageCount} sheets read · checksum <span className="font-mono">{analysis.checksum}</span>
           </p>
+          {analysis.notes && (
+            <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">Reader&apos;s note: </span>
+              {analysis.notes} Please spot-check the measurements against your plans before continuing.
+            </p>
+          )}
         </div>
       )}
 

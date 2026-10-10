@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ProposalWorkspace } from "@/components/solar/proposal/proposal-workspace";
 import { proposalIdSchema } from "@/lib/solar/schemas";
 import { getProposalDetail } from "@/lib/solar/server/db";
+import { requirePageSession } from "@/lib/solar/server/session";
 
 export const metadata: Metadata = { title: "Proposal" };
 
@@ -25,7 +26,8 @@ async function ProposalContent({ params }: { params: Promise<{ id: string }> }) 
   const parsedId = proposalIdSchema.safeParse(id);
   if (!parsedId.success) notFound();
 
-  const detail = await getProposalDetail(parsedId.data);
+  const { accountId } = await requirePageSession();
+  const detail = await getProposalDetail(accountId, parsedId.data);
   if (!detail) notFound();
 
   return <ProposalWorkspace detail={detail} />;

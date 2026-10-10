@@ -41,7 +41,6 @@ export interface Proposal {
   pageCount: number;
   /** Contract value in whole USD, derived from the BOM total. */
   estimatedValue: number;
-  crmSyncedAt: string | null;
   createdAt: string; // ISO-8601
   updatedAt: string; // ISO-8601
 }
@@ -137,16 +136,18 @@ export interface DashboardMetrics {
   winRate: number;
   /** Month-over-month style deltas for the sparkline captions. */
   trends: {
-    activeProposals: number;
-    totalSquareFeet: number;
-    pendingApprovals: number;
-    winRate: number;
+    activeProposals: number | null;
+    totalSquareFeet: number | null;
+    pendingApprovals: number | null;
+    winRate: number | null;
   };
 }
 
 /* ───────────────────────────────── Upload flow ─────────────────────────── */
 
 export interface BlueprintAnalysis {
+  /** Server-side id of the stored upload + analysis; the only handle the client needs. */
+  uploadId: string;
   fileName: string;
   fileSizeBytes: number;
   pageCount: number;
@@ -157,9 +158,25 @@ export interface BlueprintAnalysis {
   pitch: string;
   confidence: number; // 0–1
   checksum: string;
+  /**
+   * Values below are only filled in when the plan set explicitly states them.
+   * `null` means "not stated"; the proposal then asks the reviewer to verify
+   * instead of guessing.
+   */
+  designWindMph: number | null;
+  groundSnowPsf: number | null;
+  deckType: string | null;
+  rafterSpacingIn: number | null;
+  buildingHeightFt: number | null;
+  parapetHeightIn: number | null;
+  /** One-sentence reader's note about scale, legibility or assumptions. */
+  notes: string;
 }
+
+/** Why a server action refused to run, so the UI can offer the right next step. */
+export type ActionErrorCode = "limit_reached" | "unauthorized";
 
 /** Discriminated result type returned by every server action. */
 export type ActionResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: string; fieldErrors?: Record<string, string> };
+  | { ok: false; error: string; fieldErrors?: Record<string, string>; code?: ActionErrorCode };

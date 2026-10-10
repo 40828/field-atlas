@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Cpu, FileCheck2, Lock, ScanSearch } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { upload } from "@vercel/blob/client";
 import { analyzeBlueprintAction, createProposalAction } from "@/lib/solar/actions";
 import { blueprintFileSchema, siteMetadataSchema } from "@/lib/solar/schemas";
 import { UPLOAD_LIMITS } from "@/lib/solar/options";
@@ -20,13 +21,13 @@ import {
   type UploadedFile,
   type UploadPhase,
 } from "./types";
-import type { BlueprintAnalysis } from "@/lib/solar/types";
+import type { ActionErrorCode, BlueprintAnalysis } from "@/lib/solar/types";
 
 type Step = 1 | 2 | 3;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export function UploadWizard() {
+export function UploadWizard({ accountId }: { accountId: string }) {
   const router = useRouter();
 
   const [step, setStep] = useState<Step>(1);
@@ -39,6 +40,7 @@ export function UploadWizard() {
   const [stage, setStage] = useState(0);
   const [analysis, setAnalysis] = useState<BlueprintAnalysis | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [fileErrorCode, setFileErrorCode] = useState<ActionErrorCode | null>(null);
 
   // Step 2 — form
   const [values, setValues] = useState<FormValues>(EMPTY_FORM);
@@ -51,9 +53,11 @@ export function UploadWizard() {
   const [generating, setGenerating] = useState(false);
   const [genStage, setGenStage] = useState(0);
   const [genError, setGenError] = useState<string | null>(null);
+  const [genLimit, setGenLimit] = useState(false);
 
   /** Incremented to cancel an in-flight upload/analysis run. */
   const runRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
   /* ───────────── validation (derived — no effects needed) ───────────── */
@@ -73,17 +77,19 @@ export function UploadWizard() {
 
   /* ───────────────────────────── Step 1 logic ───────────────────────── */
 
-  function failUpload(message: string) {
+  function failUpload(message: string, code?: ActionErrorCode) {
     setPhase("error");
     setFile(null);
     setAnalysis(null);
     setFileError(message);
+    setFileErrorCode(code ?? null);
   }
 
   async function handleFile(f: File) {
     const run = ++runRef.current;
     const cancelled = () => runRef.current !== run;
     setFileError(null);
+    setFileErrorCode(null);
 
     // Fast client-side checks (the server action re-validates everything).
     const hasPdfName = /\.pdf$/i.test(f.name);
@@ -91,7 +97,7 @@ export function UploadWizard() {
       return failUpload("That doesn't look like a PDF. Export your roof plan as a .pdf and try again.");
     }
     if (f.size > UPLOAD_LIMITS.maxBytes) {
-      return failUpload(`File is ${(f.size / 1024 / 1024).toFixed(1)} MB — the limit is 50 MB. Try exporting only the roof-plan sheets.`);
+      return failUpload(`File is ${(f.size / 1024 / 1024).toFixed(1)} MB — the limit is ${UPLOAD_LIMITS.maxBytes / 1024 / 1024} MB. Try exporting only the roof-plan sheets.`);
     }
 
     let magic = "";
@@ -111,32 +117,57 @@ export function UploadWizard() {
     setStage(0);
     setPhase("uploading");
 
-    // Simulated chunked upload.
-    for (let p = 0; p < 100; ) {
-      await sleep(70);
+    // Direct, authenticated upload to the private Blob store (the server mints a scoped token).
+    const abort = new AbortController();
+    abortRef.current = abort;
+    let blobPathname: string;
+    try {
+      const safeName = f.name.replace(/[^A-Za-z0-9._-]+/g, "_").slice(-80);
+      const blob = await upload(`blueprints/${accountId}/${safeName}`, f, {
+        access: "private",
+        handleUploadUrl: "/api/blob/upload",
+        contentType: "application/pdf",
+        multipart: f.size > 8 * 1024 * 1024,
+        abortSignal: abort.signal,
+        onUploadProgress: ({ percentage }) => {
+          if (!cancelled()) setProgress(percentage);
+        },
+      });
+      blobPathname = blob.pathname;
+    } catch (err) {
       if (cancelled()) return;
-      p = Math.min(100, p + 7);
-      setProgress(p);
+      console.error("[upload]", err);
+      return failUpload("The upload didn't complete. Check your connection and try again.");
     }
+    if (cancelled()) return;
+    setProgress(100);
 
-    // Kick off the server analysis immediately; animate the stages alongside it.
+    // Analysis happens on the server (the model reads the PDF); stages are shown while it runs.
     setPhase("analyzing");
-    const request = analyzeBlueprintAction(check.data);
-    for (let i = 0; i < ANALYSIS_STAGES.length; i++) {
+    let settled = false;
+    const request = analyzeBlueprintAction({
+      pathname: blobPathname,
+      fileName: check.data.fileName,
+      fileSizeBytes: check.data.fileSizeBytes,
+    }).finally(() => {
+      settled = true;
+    });
+    for (let i = 0; i < ANALYSIS_STAGES.length && !settled; i++) {
       setStage(i);
-      await sleep(600);
+      await Promise.race([sleep(i === ANALYSIS_STAGES.length - 1 ? 120_000 : 3_500), request]);
       if (cancelled()) return;
     }
 
     const result = await request;
     if (cancelled()) return;
-    if (!result.ok) return failUpload(result.error);
+    if (!result.ok) return failUpload(result.error, result.code);
     setAnalysis(result.data);
     setPhase("done");
   }
 
   function resetUpload() {
     runRef.current++;
+    abortRef.current?.abort();
     setPhase("idle");
     setFile(null);
     setAnalysis(null);
@@ -196,20 +227,23 @@ export function UploadWizard() {
     setGenerating(false);
     setGenStage(0);
     setGenError(null);
+    setGenLimit(false);
+    setFileErrorCode(null);
   }
 
   async function generate() {
-    if (!parsed.success || !file || generating) return;
+    if (!parsed.success || !file || !analysis || generating) return;
     setGenerating(true);
     setGenError(null);
     setGenStage(0);
 
     const ticker = setInterval(() => setGenStage((s) => Math.min(s + 1, GENERATION_STAGES.length - 1)), 420);
-    const result = await createProposalAction({ file, meta: parsed.data });
+    const result = await createProposalAction({ uploadId: analysis.uploadId, meta: parsed.data });
     clearInterval(ticker);
 
     if (!result.ok) {
       setGenerating(false);
+      if (result.code === "limit_reached") setGenLimit(true);
       if (result.fieldErrors && Object.keys(result.fieldErrors).some((k) => k in EMPTY_FORM)) {
         setServerFormError(result.error);
         goTo(2);
@@ -257,6 +291,7 @@ export function UploadWizard() {
               stage={stage}
               analysis={analysis}
               error={fileError}
+              errorCode={fileErrorCode}
               onSelect={handleFile}
               onReset={resetUpload}
               onContinue={() => goTo(2)}
@@ -284,6 +319,7 @@ export function UploadWizard() {
               generating={generating}
               generationStage={genStage}
               error={genError}
+              limitReached={genLimit}
               onBack={() => goTo(2)}
               onGenerate={generate}
             />
@@ -297,10 +333,10 @@ export function UploadWizard() {
           <h3 className="text-sm font-semibold">What happens to your file</h3>
           <ul className="flex flex-col gap-4 text-sm">
             {[
-              { icon: Lock, title: "Validated & encrypted", body: "Type, size and PDF signature are verified on the server before processing." },
-              { icon: ScanSearch, title: "Structural analysis", body: "Roof planes, scale and obstructions are extracted from every sheet." },
-              { icon: Cpu, title: "Engineered output", body: "Code checks, zoning alignment and a priced BOM are drafted automatically." },
-              { icon: FileCheck2, title: "You stay in control", body: "Every quantity and unit cost remains editable before you export." },
+              { icon: Lock, title: "Private storage", body: "Your PDF goes to a private store scoped to your account. Type, size and PDF signature are verified on the server." },
+              { icon: ScanSearch, title: "AI takeoff", body: "A vision model reads the sheets and measures roof area, perimeter and penetrations. Values the plans don't state are left blank, never guessed." },
+              { icon: Cpu, title: "Draft proposal", body: "Quantities come from those measurements. Code and zoning items are a verification checklist for your engineer." },
+              { icon: FileCheck2, title: "You stay in control", body: "Every quantity and unit cost is editable. Replace our default unit costs with your supplier pricing." },
             ].map(({ icon: Icon, title, body }) => (
               <li key={title} className="flex gap-3">
                 <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-primary/12 text-brand">

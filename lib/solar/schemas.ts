@@ -45,12 +45,34 @@ export const blueprintFileSchema = z.object({
     .number()
     .int()
     .min(UPLOAD_LIMITS.minBytes, "File looks empty or truncated")
-    .max(UPLOAD_LIMITS.maxBytes, "File exceeds the 50 MB limit"),
+    .max(UPLOAD_LIMITS.maxBytes, `File exceeds the ${UPLOAD_LIMITS.maxBytes / 1024 / 1024} MB limit`),
   mimeType: z.literal(UPLOAD_LIMITS.mime, { error: "File must be a PDF document" }),
   /** First bytes of the file as ASCII; a real PDF always starts with `%PDF-`. */
   magic: z.string().regex(/^%PDF-\d\.\d/, "File content is not a valid PDF"),
 });
 export type BlueprintFileInput = z.infer<typeof blueprintFileSchema>;
+
+/** What the client sends after a direct-to-Blob upload; the server re-reads the file itself. */
+export const blueprintRefSchema = z.object({
+  pathname: z
+    .string()
+    .min(10)
+    .max(300)
+    .refine((p) => !p.includes("..") && /^blueprints\/[^/]+\/[^/]+\.pdf$/i.test(p), "Invalid upload reference"),
+  fileName: blueprintFileSchema.shape.fileName,
+  fileSizeBytes: blueprintFileSchema.shape.fileSizeBytes,
+});
+export type BlueprintRefInput = z.infer<typeof blueprintRefSchema>;
+
+export const createProposalSchema = z.object({
+  uploadId: z.uuid("Invalid upload"),
+});
+
+export const workflowSchema = z.object({
+  proposalId: z.string().regex(/^PRP-\d{4,6}$/, "Invalid proposal id"),
+  approval: z.enum(["not-submitted", "pending", "approved", "changes-requested"]).optional(),
+  outcome: z.enum(["open", "won", "lost"]).optional(),
+});
 
 /* ─────────────────────────────── Site metadata ─────────────────────────── */
 

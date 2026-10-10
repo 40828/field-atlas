@@ -72,7 +72,8 @@ export const JURISDICTION_SUGGESTIONS: { jurisdiction: string; zoningCode: strin
 
 /** Upload constraints, enforced on the client *and* re-checked in the server action. */
 export const UPLOAD_LIMITS = {
-  maxBytes: 50 * 1024 * 1024,
+  // Kept under the multimodal model's PDF request limit (base64 inflates by ~33%).
+  maxBytes: 25 * 1024 * 1024,
   minBytes: 1024,
   mime: "application/pdf",
 } as const;

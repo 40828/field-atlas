@@ -1,80 +1,83 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ZodError } from "zod";
-import { analyzeBlueprint } from "./generate";
+import { get } from "@vercel/blob";
+import { assertCanAnalyze, assertCanCreateProposal, getEntitlement } from "@/lib/billing/entitlements";
 import {
-  blueprintFileSchema,
-  flattenIssues,
-  proposalIdSchema,
+  blueprintRefSchema,
+  createProposalSchema,
   saveBomSchema,
   siteMetadataSchema,
-  type BlueprintFileInput,
+  workflowSchema,
+  type BlueprintRefInput,
   type SiteMetadataInput,
 } from "./schemas";
-import { getProposalDetail, insertProposal, markCrmSynced, replaceBomItems } from "./server/db";
-import { ActionError, rateLimit, requireSession } from "./server/session";
-import type { ActionResult, BlueprintAnalysis, BomLineItem } from "./types";
+import { UPLOAD_LIMITS } from "./options";
+import { extractBlueprint } from "./server/analyze";
+import { createProposalFromUpload, getUpload, insertUpload, replaceBomItems, updateProposalWorkflow } from "./server/db";
+import { guarded } from "./server/guarded";
+import { ActionError } from "./server/session";
+import type { ActionResult, ApprovalState, BlueprintAnalysis, BomLineItem, DealOutcome } from "./types";
 
 /**
- * Server actions — the only write path into the mock database.
- *
- * Every action follows the same hardened pipeline:
- *   1. authenticate (`requireSession`)
- *   2. rate-limit per user + action
- *   3. re-validate *all* input with Zod (client checks are never trusted)
- *   4. perform the mutation, then revalidate affected routes
- *   5. return a typed `ActionResult` — never throw to the client
+ * Server actions: the only write path into the database. Each runs through `guarded`
+ * (auth → rate limit → Zod re-validation → mutate → typed result) and is scoped to the
+ * caller's `accountId`.
  *
  * Note: only async functions may be exported from a "use server" module.
  */
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-async function guarded<T>(
-  action: string,
-  limit: { max: number; windowMs: number },
-  run: (ctx: { userId: string }) => Promise<T>,
-): Promise<ActionResult<T>> {
-  try {
-    const session = await requireSession();
-    rateLimit(`${session.userId}:${action}`, limit.max, limit.windowMs);
-    return { ok: true, data: await run({ userId: session.userId }) };
-  } catch (err) {
-    if (err instanceof ActionError) {
-      return { ok: false, error: err.message, fieldErrors: err.fieldErrors };
+/**
+ * Step 1: read the uploaded PDF from private storage, measure it with the vision model and
+ * store the result server-side. The client only ever receives the resulting `uploadId`.
+ */
+export async function analyzeBlueprintAction(input: BlueprintRefInput): Promise<ActionResult<BlueprintAnalysis>> {
+  return guarded("analyze", { max: 10, windowMs: 60_000 }, async ({ accountId, userId }) => {
+    const ref = blueprintRefSchema.parse(input);
+    if (!ref.pathname.startsWith(`blueprints/${accountId}/`)) {
+      throw new ActionError("That upload doesn't belong to your account.");
     }
-    if (err instanceof ZodError) {
-      const fieldErrors = flattenIssues(err);
-      return { ok: false, error: Object.values(fieldErrors)[0] ?? "Invalid input", fieldErrors };
-    }
-    console.error(`[action:${action}]`, err);
-    return { ok: false, error: "Something went wrong. Please try again." };
-  }
-}
+    assertCanAnalyze(await getEntitlement(accountId));
 
-/** Step 1 — validate the uploaded PDF's metadata and run (simulated) structural analysis. */
-export async function analyzeBlueprintAction(
-  input: BlueprintFileInput,
-): Promise<ActionResult<BlueprintAnalysis>> {
-  return guarded("analyze", { max: 20, windowMs: 60_000 }, async () => {
-    const file = blueprintFileSchema.parse(input);
-    await sleep(2_200); // stand-in for the document-AI round trip
-    return analyzeBlueprint(file);
+    const blob = await get(ref.pathname, { access: "private" });
+    if (!blob || blob.statusCode !== 200) throw new ActionError("We couldn't find that upload. Please upload it again.");
+    if (blob.blob.size > UPLOAD_LIMITS.maxBytes || blob.blob.size < UPLOAD_LIMITS.minBytes) {
+      throw new ActionError("That file's size isn't supported.");
+    }
+    const pdf = Buffer.from(await new Response(blob.stream).arrayBuffer());
+    if (pdf.subarray(0, 5).toString("latin1") !== "%PDF-") {
+      throw new ActionError("File content is not a valid PDF.");
+    }
+
+    const extracted = await extractBlueprint(pdf, ref.fileName);
+    return insertUpload({
+      accountId,
+      userId,
+      pathname: ref.pathname,
+      fileName: ref.fileName,
+      fileSizeBytes: pdf.byteLength,
+      analysis: { ...extracted, fileName: ref.fileName, fileSizeBytes: pdf.byteLength },
+    });
   });
 }
 
-/** Step 3 — persist the proposal + generated BOM. Analysis is recomputed server-side. */
+/** Step 3: generate the proposal + BOM from a stored analysis and the confirmed site details. */
 export async function createProposalAction(input: {
-  file: BlueprintFileInput;
+  uploadId: string;
   meta: SiteMetadataInput;
 }): Promise<ActionResult<{ id: string }>> {
-  return guarded("create", { max: 10, windowMs: 60_000 }, async () => {
-    const file = blueprintFileSchema.parse(input.file);
+  return guarded("create", { max: 10, windowMs: 60_000 }, async ({ accountId, userId }) => {
+    const { uploadId } = createProposalSchema.parse({ uploadId: input.uploadId });
     const meta = siteMetadataSchema.parse(input.meta);
-    await sleep(1_400); // drafting + BOM pricing
-    const proposal = await insertProposal(analyzeBlueprint(file), meta);
+    assertCanCreateProposal(await getEntitlement(accountId));
+
+    const upload = await getUpload(accountId, uploadId);
+    if (!upload) throw new ActionError("That upload wasn't found. Please upload the plan again.");
+    const proposal = await createProposalFromUpload({ accountId, userId, upload, meta });
+    if (!proposal) throw new ActionError("A proposal was already created from that upload.");
+
     revalidatePath("/dashboard");
+    revalidatePath("/dashboard/billing");
     return { id: proposal.id };
   });
 }
@@ -84,9 +87,9 @@ export async function saveBomAction(input: {
   proposalId: string;
   items: BomLineItem[];
 }): Promise<ActionResult<{ items: BomLineItem[]; updatedAt: string; estimatedValue: number }>> {
-  return guarded("save-bom", { max: 60, windowMs: 60_000 }, async () => {
+  return guarded("save-bom", { max: 60, windowMs: 60_000 }, async ({ accountId }) => {
     const parsed = saveBomSchema.parse(input);
-    const updated = await replaceBomItems(parsed.proposalId, parsed.items);
+    const updated = await replaceBomItems(accountId, parsed.proposalId, parsed.items);
     if (!updated) throw new ActionError("Proposal not found");
     revalidatePath("/dashboard");
     revalidatePath(`/dashboard/proposals/${parsed.proposalId}`);
@@ -94,19 +97,18 @@ export async function saveBomAction(input: {
   });
 }
 
-/** Push the proposal to the CRM (simulated HubSpot/Salesforce call). */
-export async function syncToCrmAction(
-  proposalId: string,
-): Promise<ActionResult<{ syncedAt: string; crmRecordId: string }>> {
-  return guarded("crm-sync", { max: 15, windowMs: 60_000 }, async () => {
-    const id = proposalIdSchema.parse(proposalId);
-    const detail = await getProposalDetail(id);
-    if (!detail) throw new ActionError("Proposal not found");
-    await sleep(1_300);
-    const updated = await markCrmSynced(id);
-    if (!updated?.crmSyncedAt) throw new ActionError("CRM sync failed");
+/** Track where a proposal stands (approval + deal outcome); feeds the dashboard metrics. */
+export async function updateWorkflowAction(input: {
+  proposalId: string;
+  approval?: ApprovalState;
+  outcome?: DealOutcome;
+}): Promise<ActionResult<{ approval: ApprovalState; outcome: DealOutcome }>> {
+  return guarded("workflow", { max: 60, windowMs: 60_000 }, async ({ accountId }) => {
+    const { proposalId, ...patch } = workflowSchema.parse(input);
+    const updated = await updateProposalWorkflow(accountId, proposalId, patch);
+    if (!updated) throw new ActionError("Proposal not found");
     revalidatePath("/dashboard");
-    revalidatePath(`/dashboard/proposals/${id}`);
-    return { syncedAt: updated.crmSyncedAt, crmRecordId: `DEAL-${id.slice(4)}-${detail.bom.length}` };
+    revalidatePath(`/dashboard/proposals/${proposalId}`);
+    return { approval: updated.approval, outcome: updated.outcome };
   });
 }
