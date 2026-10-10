@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 /**
@@ -5,15 +6,28 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  * authenticated APIs go through Clerk. The marketing site, Field Atlas and the Stripe webhook
  * (`/api/billing/webhook`, which authenticates by signature) are never touched.
  */
-const isProtected = createRouteMatcher(["/dashboard(.*)", "/api/blob(.*)"]);
+const isProtected = createRouteMatcher(["/dashboard(.*)", "/engine/app(.*)", "/api/blob(.*)", "/api/engine/events(.*)"]);
 
-export default clerkMiddleware(
-  async (auth, req) => {
-    if (isProtected(req)) await auth.protect();
-  },
-  { signInUrl: "/sign-in", signUpUrl: "/sign-up" },
-);
+const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY);
+
+export default clerkReady
+  ? clerkMiddleware(
+      async (auth, req) => {
+        if (isProtected(req)) await auth.protect();
+      },
+      { signInUrl: "/sign-in", signUpUrl: "/sign-up" },
+    )
+  : function proxy() {
+      return NextResponse.next();
+    };
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/sign-in/:path*", "/sign-up/:path*", "/api/blob/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/engine/app/:path*",
+    "/sign-in/:path*",
+    "/sign-up/:path*",
+    "/api/blob/:path*",
+    "/api/engine/events/:path*",
+  ],
 };

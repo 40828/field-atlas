@@ -8,6 +8,20 @@
       "when": 1791636638942,
       "tag": "0000_dapper_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791671543843,
+      "tag": "0001_autonomous_money_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791679000000,
+      "tag": "0002_ame_catalog",
+      "breakpoints": true
     }
   ]
 }
